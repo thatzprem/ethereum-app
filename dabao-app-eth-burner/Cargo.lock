@@ -637,6 +637,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "bao1x-hal"
+version = "0.1.0"
+dependencies = [
+ "arbitrary-int",
+ "bao1x-api",
+ "bitbybit",
+ "bitfield",
+ "bitflags 1.3.2",
+ "bytemuck",
+ "either",
+ "log",
+ "num-derive",
+ "num-traits",
+ "rand_chacha 0.3.1",
+ "rkyv",
+ "usb-device",
+ "utralib",
+ "xous",
+ "xous-api-names",
+ "xous-api-ticktimer",
+ "xous-ipc",
+ "xous-riscv",
+]
+
+[[package]]
 name = "bare-metal"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -662,6 +687,24 @@ name = "base64ct"
 version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
+
+[[package]]
+name = "bio-lib"
+version = "0.1.0"
+dependencies = [
+ "arbitrary-int",
+ "bao1x-api",
+ "bao1x-hal",
+ "bitbybit",
+ "log",
+ "num-derive",
+ "num-traits",
+ "utralib",
+ "xous",
+ "xous-api-names",
+ "xous-api-susres",
+ "xous-api-ticktimer",
+]
 
 [[package]]
 name = "bip32"
@@ -746,6 +789,12 @@ dependencies = [
  "bitcoin-io",
  "hex-conservative 0.2.3",
 ]
+
+[[package]]
+name = "bitfield"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46afbd2983a5d5a7bd740ccb198caf5b82f45c40c09c0eed36052d91cb92e719"
 
 [[package]]
 name = "bitflags"
@@ -1117,9 +1166,12 @@ dependencies = [
 
 [[package]]
 name = "dabao-eth-burner"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
+ "arbitrary-int",
  "bao1x-api",
+ "bao1x-hal",
+ "bio-lib",
  "ciborium",
  "getrandom 0.2.12",
  "keystore-api",
@@ -1133,6 +1185,7 @@ dependencies = [
  "xous",
  "xous-api-log",
  "xous-api-names",
+ "xous-api-susres",
  "xous-ipc",
  "zeroize",
 ]
@@ -3657,6 +3710,20 @@ dependencies = [
  "rkyv",
  "xous",
  "xous-api-log",
+ "xous-ipc",
+]
+
+[[package]]
+name = "xous-api-susres"
+version = "0.9.69"
+dependencies = [
+ "log",
+ "num-derive",
+ "num-traits",
+ "rkyv",
+ "xous",
+ "xous-api-log",
+ "xous-api-names",
  "xous-ipc",
 ]
 

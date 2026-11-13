@@ -1,17 +1,21 @@
 //! Ethereum burner signer for the dabao (no screen, no PIN).
 //!
 //! The host talks to it over USB HID (a single vendor-defined interface) or,
-//! in the emulator, a TCP socket; see `protocol.cddl`. Every request is
-//! answered at once: nothing is shown and nothing is confirmed. A random seed is created on the first boot
+//! in the emulator, a TCP socket; see `protocol.cddl`. Nothing is shown, but a
+//! signing request is only signed once the person holding the device approves
+//! it with a touch on pad PB1 (see `confirm`); get-version and get-address are
+//! answered at once. A random seed is created on the first boot
 //! from the chip TRNG and kept in the keystore's application slots; it is never
 //! shown, so the funds on a burner can't be recovered elsewhere.
 //!
-//! Anyone with access to the USB port can sign anything with this key: use it
-//! for test networks and small amounts only.
+//! The approval says "sign", not "sign this": the device can't show what it is
+//! asked to sign. Use it for test networks and small amounts only.
+mod confirm;
 #[allow(dead_code)] // error codes and helpers the burner doesn't use
 mod protocol;
 mod transport;
 
+use confirm::{Confirm, Decision};
 use protocol::{ErrorCode, Request, TYPE_CUSTOM, TYPE_ERC4527};
 use sha2::{Digest, Sha256};
 use signer_core::DerivationPath;
@@ -177,22 +181,50 @@ fn load_or_create(slots: &mut impl Slots) -> Zeroizing<[u8; 32]> {
     entropy
 }
 
-struct Burner {
+struct Burner<C: Confirm> {
     seed: Zeroizing<[u8; 64]>,
+    confirm: C,
 }
 
 fn error(code: ErrorCode, msg: &str) -> Vec<u8> {
     protocol::encode_frame(TYPE_CUSTOM, &protocol::error_response(code, msg))
 }
 
-impl Burner {
+/// Development aid: restart the whole chip shortly after the reply is sent, so
+/// new firmware can be loaded without touching the board.
+#[cfg(target_os = "xous")]
+fn reboot_soon() -> Result<Vec<u8>, Vec<u8>> {
+    let xns = xous_names::XousNames::new().map_err(|_| error(ErrorCode::Internal, "names"))?;
+    let susres = xous_api_susres::Susres::new_without_hook(&xns)
+        .map_err(|e| error(ErrorCode::Internal, &format!("no reboot service: {e:?}")))?;
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        log::info!("rebooting on request");
+        susres.reboot(true).ok();
+    });
+    Ok(protocol::encode_frame(TYPE_CUSTOM, &protocol::message_response("rebooting")))
+}
+
+#[cfg(not(target_os = "xous"))]
+fn reboot_soon() -> Result<Vec<u8>, Vec<u8>> {
+    Err(error(ErrorCode::Unsupported, "no reboot in the emulator"))
+}
+
+impl<C: Confirm> Burner<C> {
     fn node(&self, path: &DerivationPath) -> Result<PublicNode, Vec<u8>> {
         PublicNode::from_seed(&self.seed, path).map_err(|_| error(ErrorCode::InvalidRequest, "invalid path"))
     }
 
-    fn get_address(&self, message: &[u8]) -> Result<Vec<u8>, Vec<u8>> {
-        let Ok(Request::GetAddress(path)) = protocol::decode_request(message) else {
-            return Err(error(ErrorCode::InvalidRequest, ""));
+    /// The custom commands `transport` doesn't answer itself.
+    fn custom(&mut self, message: &[u8]) -> Result<Vec<u8>, Vec<u8>> {
+        let path = match protocol::decode_request(message) {
+            Ok(Request::GetAddress(path)) => path,
+            Ok(Request::ProbeConfirm) => {
+                let seen = self.confirm.probe();
+                return Ok(protocol::encode_frame(TYPE_CUSTOM, &protocol::message_response(&seen)));
+            }
+            Ok(Request::Reboot) => return reboot_soon(),
+            _ => return Err(error(ErrorCode::InvalidRequest, "")),
         };
         let node = self.node(&path)?;
         let address = node.address().to_checksum(None);
@@ -201,14 +233,28 @@ impl Burner {
         Ok(protocol::encode_frame(TYPE_CUSTOM, &reply))
     }
 
-    /// ERC-4527 `eth-sign-request`: signed without review.
-    fn sign(&self, message: &[u8]) -> Result<Vec<u8>, Vec<u8>> {
+    /// ERC-4527 `eth-sign-request`: nothing is shown, but it is only signed
+    /// once the person holding the device approves it (`confirm`).
+    fn sign(&mut self, message: &[u8]) -> Result<Vec<u8>, Vec<u8>> {
         let req = signer_decoding::decode_sign_request(message)
             .map_err(|e| error(ErrorCode::InvalidRequest, &e.to_string()))?;
         let key = signer_signing::key_from_seed(&self.seed, &req.derivation_path)
             .map_err(|_| error(ErrorCode::InvalidRequest, "invalid path"))?;
         if req.address.is_some_and(|a| a != signer_signing::address_of(&key)) {
             return Err(error(ErrorCode::InvalidRequest, "address mismatch: not this device's key"));
+        }
+        let (how, secs) = (self.confirm.how(), self.confirm.timeout().as_secs());
+        log::info!("sign-request {}: {how} within {secs} s to approve", req.derivation_path);
+        match self.confirm.confirm() {
+            Decision::Approved => {}
+            Decision::TimedOut(seen) => {
+                log::info!("sign-request {}: not approved ({seen})", req.derivation_path);
+                return Err(error(ErrorCode::UserRejected, &format!("not approved: {how} within {secs} s ({seen})")));
+            }
+            Decision::Unavailable(why) => {
+                log::error!("sign-request {}: can't ask for approval ({why})", req.derivation_path);
+                return Err(error(ErrorCode::NotReady, &format!("can't ask for approval: {why}")));
+            }
         }
         let sig = signer_signing::sign_request(&req, &key).map_err(|e| {
             log::error!("signing failed: {e}");
@@ -219,10 +265,10 @@ impl Burner {
     }
 }
 
-impl transport::Handler for Burner {
+impl<C: Confirm> transport::Handler for Burner<C> {
     fn request(&mut self, ty: u8, message: &[u8]) -> Vec<u8> {
         let r = match ty {
-            TYPE_CUSTOM => self.get_address(message),
+            TYPE_CUSTOM => self.custom(message),
             TYPE_ERC4527 => self.sign(message),
             _ => Err(error(ErrorCode::Unsupported, "")),
         };
@@ -242,7 +288,11 @@ fn main() -> ! {
     let entropy = load_or_create(&mut slots);
     let seed = Zeroizing::new(signer_signing::seed_from_entropy(&entropy[..], "").expect("seed"));
     drop(entropy);
-    let burner = Burner { seed };
+    #[cfg(target_os = "xous")]
+    let confirm = confirm::Touch::new();
+    #[cfg(not(target_os = "xous"))]
+    let confirm = confirm::HostFile::new();
+    let burner = Burner { seed, confirm };
     let first = [(44, true), (60, true), (0, true), (0, false), (0, false)];
     let path = DerivationPath {
         components: first.iter().map(|&(index, hardened)| signer_core::ChildNumber { index, hardened }).collect(),

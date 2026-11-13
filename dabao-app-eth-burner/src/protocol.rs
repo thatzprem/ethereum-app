@@ -23,6 +23,10 @@ const KEY_MESSAGE: u64 = 6;
 
 const CMD_GET_ADDRESS: u64 = 1;
 const CMD_GET_VERSION: u64 = 2;
+/// Development aid: what the approval sensor reads right now.
+const CMD_PROBE_CONFIRM: u64 = 3;
+/// Development aid: restart the chip, which lands in the bootloader.
+const CMD_REBOOT: u64 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorCode {
@@ -39,6 +43,8 @@ pub enum ErrorCode {
 pub enum Request {
     GetAddress(DerivationPath),
     GetVersion,
+    ProbeConfirm,
+    Reboot,
 }
 
 /// `length || type || message`.
@@ -98,6 +104,8 @@ pub fn decode_request(message: &[u8]) -> Result<Request, ErrorCode> {
             Ok(Request::GetAddress(path))
         }
         Some(CMD_GET_VERSION) => Ok(Request::GetVersion),
+        Some(CMD_PROBE_CONFIRM) => Ok(Request::ProbeConfirm),
+        Some(CMD_REBOOT) => Ok(Request::Reboot),
         Some(_) => Err(ErrorCode::Unsupported),
         None => Err(ErrorCode::InvalidRequest),
     }
@@ -120,6 +128,11 @@ pub fn address_response(public_key: &[u8; 65], address: &str, chain_code: &[u8; 
 
 pub fn version_response(version: &str) -> Vec<u8> {
     encode(vec![(int(KEY_STATUS), int(0)), (int(KEY_VERSION), Value::Text(version.into()))])
+}
+
+/// A successful reply that is only text (probe-confirm).
+pub fn message_response(message: &str) -> Vec<u8> {
+    encode(vec![(int(KEY_STATUS), int(0)), (int(KEY_MESSAGE), Value::Text(message.into()))])
 }
 
 pub fn error_response(code: ErrorCode, message: &str) -> Vec<u8> {

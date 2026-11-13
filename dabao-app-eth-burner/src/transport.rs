@@ -29,7 +29,7 @@ pub fn handle(body: &[u8], app: &mut impl Handler) -> Vec<u8> {
             Ok(Request::GetVersion) => {
                 protocol::encode_frame(TYPE_CUSTOM, &protocol::version_response(crate::VERSION))
             }
-            Ok(Request::GetAddress(_)) => app.request(ty, message),
+            Ok(Request::GetAddress(_) | Request::ProbeConfirm | Request::Reboot) => app.request(ty, message),
             Err(e) => error_frame(e, "bad request"),
         },
         _ => error_frame(ErrorCode::Unsupported, "unknown message type"),

@@ -8,16 +8,17 @@
 ;            2 eth-typed-data (EIP-712 JSON, v = 27/28),
 ;            3 eth-raw-bytes (EIP-191 personal_sign, v = 27/28) and
 ;            4 eth-typed-transaction (EIP-1559, EIP-7702).
-;            The burner has no screen: every request is signed at once,
-;            without review.
+;            The burner has no screen: nothing is reviewed, but a request is
+;            only signed after a touch on pad PB1, within 15 seconds.
 ;            Reply on success: eth-signature (type 0x01), with request-id echoed.
 ;            Any failure (decoding, `address` not matching this device's key
-;            at the path) is an error-response in a type 0x02 envelope.
+;            at the path, no touch in time) is an error-response in a type
+;            0x02 envelope.
 ; type 0x02: the messages below.
 ; Over USB HID the envelope is cut into 64-byte reports, the last one padded
 ; with zeros; one request at a time.
 
-request = get-address / get-version
+request = get-address / get-version / probe-confirm / reboot
 
 ; Return the public key, address and chain code at `path`, at once.
 get-address = {
@@ -30,7 +31,25 @@ get-version = {
   command: 2,
 }
 
-response = address-response / version-response / error-response
+; Development aid. Return, as text in a message-response, the lowest and
+; highest reading of the approval sensor over the next half second
+; ("49 49" untouched, "49 143" when touched). Approves nothing.
+probe-confirm = {
+  command: 3,
+}
+
+; Development aid. Answer with a message-response, then restart the chip
+; (it lands in the bootloader). Not available in the emulator.
+reboot = {
+  command: 4,
+}
+
+response = address-response / version-response / message-response / error-response
+
+message-response = {
+  status: 0,
+  message: text,
+}
 
 address-response = {
   status: 0,
@@ -41,7 +60,7 @@ address-response = {
 
 version-response = {
   status: 0,
-  version: text,                  ; e.g. "0.1.0"
+  version: text,                  ; e.g. "0.3.0"
 }
 
 error-response = {
@@ -50,12 +69,12 @@ error-response = {
 }
 
 error-code = &(
-  user-rejected: 1,               ; not used by the burner (no user approval)
+  user-rejected: 1,               ; no touch on the pad in time
   invalid-request: 2,             ; bad envelope, CBOR or keypath
   unsupported: 3,                 ; unknown command or message type
   busy: 4,                        ; not used by the burner
   internal: 5,
-  not-ready: 6,                   ; not used by the burner
+  not-ready: 6,                   ; the touch sensor can't be used
 )
 
 command = 1

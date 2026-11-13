@@ -1,6 +1,6 @@
 [package]
 name = "dabao-eth-burner"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Ethereum burner signer for a bare dabao (Xous, no screen, USB HID)"
@@ -37,10 +37,27 @@ bao1x-api = { path = "../../xous-core/libs/bao1x-api", optional = true, features
 keystore-api = { path = "../../xous-core/libs/keystore-api", optional = true, features = ["gen2", "app-keys"] }
 xous-ipc = { version = "0.10.11", optional = true }
 utralib = { version = "0.1.27", optional = true, default-features = false }
+# device builds only: touch-to-confirm on a bare pad (BIO captouch)
+bio-lib = { path = "../../xous-core/libs/bio-lib", optional = true, features = ["captouch"] }
+arbitrary-int = { version = "1.2", optional = true }
+# not used directly: bio-lib needs bao1x-hal built for this board
+bao1x-hal = { path = "../../xous-core/libs/bao1x-hal", optional = true, features = ["std", "board-dabao"] }
+# device builds only: the reboot development command
+xous-api-susres = { path = "../../xous-core/api/xous-api-susres", optional = true }
 
 [features]
-board-dabao = ["usb-bao1x", "bao1x-api", "keystore-api", "xous-ipc"]
-bao1x = ["utralib/bao1x"]
+board-dabao = [
+    "usb-bao1x",
+    "bao1x-api",
+    "keystore-api",
+    "xous-ipc",
+    "bio-lib",
+    "arbitrary-int",
+    "bao1x-hal",
+    "xous-api-susres",
+]
+# utralib/std: the register types bao1x-hal's BIO driver needs
+bao1x = ["utralib/bao1x", "utralib/std"]
 
 [patch.crates-io]
 getrandom = { path = "../../xous-core/imports/getrandom" }
