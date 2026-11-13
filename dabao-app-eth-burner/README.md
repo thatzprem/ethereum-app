@@ -4,6 +4,48 @@
 bao1x, no screen): a burner wallet with no PIN and no recovery phrase, which signs only when the pad
 `PB1` is touched.
 
+![Nothing signs until you touch the board: the computer asks over USB, you touch a bare pad, the chip signs](docs/02-touch-to-confirm.png)
+
+## Why open hardware
+
+We verify our software. We still take our chips on faith.
+
+Every wallet, password manager and secure login rests on a chip that nobody outside the manufacturer can
+inspect. The code on top can be open source and audited line by line, and it still runs on a black box. If
+the silicon has a flaw or a backdoor, no amount of software review will find it. Open hardware changes the
+question from "do you trust the vendor?" to "can you check?"
+
+![Layer by layer: a typical secure chip is closed below the application; the Baochip-1x with Xous can be checked at each layer](docs/01-can-you-check.png)
+
+The Baochip-1x that this signer runs on is a RISC-V microcontroller where that checking is possible at each
+layer:
+
+* The chip's design source is published.
+* The package lets you image the silicon under infrared light and compare it with that design.
+* The bootloader can be rebuilt from source and matched, hash for hash, against what the chip reports.
+* The operating system, Xous, is open and written in Rust.
+
+It isn't entirely open: some third-party blocks inside the chip are closed, and they are documented as
+closed. The left column of the picture is a generalisation; some commercial chips publish more than that.
+
+What this signer adds on top is small and concrete:
+
+* The private key is made by the chip's own hardware random number generator and never leaves it.
+* Nothing is signed until a finger touches a bare pad on the board. No part is added: one of the chip's I/O
+  co-processor (BIO) cores measures the touch.
+* No touch within 15 seconds, and the request is refused.
+
+It runs on a real board. A transaction signed by it is confirmed on the Sepolia test network:
+[`0xdd4a2bfe…e7835b84`](https://sepolia.etherscan.io/tx/0xdd4a2bfe3d43b7757218c0c065b9a6da3c3ac6c1536d0fe2f421af15e7835b84)
+(signed with 0.1.0, before the touch was required).
+
+What it does not do yet: show what is being signed. The touch says "sign", not "sign this". A display is
+the next step.
+
+The pictures in `docs/` are illustrations, not photographs of the board or of its silicon.
+
+## How it works
+
 The host talks to it over a single vendor-defined USB HID interface (xous-core's
 `--feature usb-bao1x/generic-hid`, on its `dabao-burner` branch) or, in the emulator, over a TCP socket.
 Messages are `length (u32 BE) || type || CBOR`; see [`protocol.cddl`](protocol.cddl).

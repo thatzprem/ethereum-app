@@ -1,5 +1,13 @@
 # Universal Ethereum Signer
 
+> **This branch (`touch-confirm`)** adds touch-to-confirm to the dabao burner, for the Dabao Open Hardware
+> Hackathon: the signer on a bare Baochip-1x board only signs after a fingertip touches a pad, sensed by one
+> of the chip's BIO cores with no added parts. See
+> [dabao-app-eth-burner](dabao-app-eth-burner/README.md) for why open hardware matters here, how it works
+> and what has run on a real board.
+>
+> ![A signature is only as trustworthy as the silicon that makes it. That silicon should be something you can inspect.](dabao-app-eth-burner/docs/03-quote.png)
+
 The Universal Ethereum Signer is a reference implementation for Ethereum hardware signers. 
 
 This monorepo is opinionated towards Rust and feature rich ("Mb RAM class") embedded multi applications Operating Systems, reuse of existing well maintained libraries (such as [alloy](https://alloy.rs/)), and development fully driven by automatic programming.
