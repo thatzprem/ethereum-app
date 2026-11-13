@@ -113,6 +113,64 @@ tools/eth_client.py --hid get-address    # needs `pip install hidapi`
 hashes and recover the signer from the returned signature); `--hid` uses `hidapi` and opens
 VID 0x1d50 / PID 0x6197. `ETH_BURNER_PORT` changes the emulator's TCP port (default 7600).
 
+## Reproduce it from scratch
+
+These are the steps the firmware on the test board was built with, on a clean Linux machine (a GitHub
+Codespace, 4 cores; nothing is installed on the PC the board is plugged into). Rust was 1.99.1.
+
+```sh
+# 1. the two repositories, side by side
+git clone --branch devcon8-workshop https://github.com/thatzprem/xous-core.git     # commit d1d4b9b
+git clone --branch touch-confirm    https://github.com/thatzprem/ethereum-app.git
+
+# 2. Rust, and the version tags the Xous build checks for
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+. "$HOME/.cargo/env"
+cd xous-core
+git remote add upstream https://github.com/betrusted-io/xous-core.git
+git fetch upstream --tags
+
+# 3. the Xous target for Rust (downloaded from betrusted-io/rust releases)
+cargo xtask install-toolkit
+
+# 4. the signer, for the emulator and for the board
+cd ../ethereum-app/dabao-app-eth-burner
+./build.sh
+cargo test --release
+
+# 5. the board image: loader.uf2, xous.uf2 and apps.uf2 in
+#    xous-core/target/riscv32imac-unknown-xous-elf/release/
+cd ../../xous-core
+cargo xtask dabao ../ethereum-app/dabao-app-eth-burner/target/riscv32imac-unknown-xous-elf/release/eth-burner \
+    --feature usb-bao1x/generic-hid
+```
+
+The images are signed with the public developer key. A bao1x that boots one erases its factory secrets
+and counts itself, for good, as a developer device.
+
+To load them, put the board in its bootloader (hold `PROG`, tap `RESET`, release `PROG`): it shows up as a
+USB drive named `BAOCHIP`. Copy the three files onto it, then press `PROG` to start. With 0.3.0 or later
+already running, the `reboot` command replaces the buttons.
+
+Built this way, `loader.uf2` came out identical from one build to the next and `xous.uf2` did not, most
+likely because of the build timestamp. xous-core's `--no-timestamp` flag and the
+[baobit](https://github.com/sbellem/baobit) toolchain are the way to byte-for-byte reproducible images;
+neither has been tried here.
+
+### Windows host tools
+
+`tools/windows` holds PowerShell scripts that talk to the board with Windows' own HID support: no Python,
+no driver, nothing to install (PowerShell 7).
+
+| Script | What it does |
+|---|---|
+| `dabao-flash.ps1 -Dir <folder> [-AppsOnly]` | asks the signer to reboot, waits for `BAOCHIP`, copies the firmware, starts it and prints the running version |
+| `dabao-sign-hello.ps1` | sends an EIP-191 request for `Hello`; touch `PB1` to approve |
+| `dabao-touch-meter.ps1` | shows the touch sensor's reading twice a second (`probe-confirm`) |
+| `dabao-hid-send.ps1 -Hex <type and message>` | sends one raw request and prints the reply |
+
+They don't check signatures: the signer of a reply was recovered with `tools/ethlib.py`.
+
 ## Hardware tests
 
 The checks to run on a real board are in xous-core's
@@ -138,3 +196,5 @@ Not run on a board yet: sign-typed-data, the wrong-address refusal, a second boa
 | `src/transport.rs` | HID (device) and TCP (emulator) transports; answers get-version |
 | `protocol.cddl` | protocol definition |
 | `tools/eth_client.py`, `tools/ethlib.py` | host client and its Ethereum helpers |
+| `tools/windows/*.ps1` | Windows host scripts: flash, sign, touch meter, raw requests |
+| `docs/` | illustrations for this README |
